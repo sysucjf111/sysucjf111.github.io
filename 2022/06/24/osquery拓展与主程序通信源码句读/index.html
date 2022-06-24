@@ -1,0 +1,861 @@
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-color-scheme=auto>
+
+
+
+<head>
+  <meta charset="UTF-8">
+  <link rel="apple-touch-icon" sizes="76x76" href="/img/fluid.png">
+  <link rel="icon" href="/img/fluid.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  
+  <meta name="theme-color" content="#2f4154">
+  <meta name="author" content="Junfeng Chen">
+  <meta name="keywords" content="">
+  
+    <meta name="description" content="目的 了解osquery的拓展的实现原理，包括拓展与osquery进程之间的通信协议、基础交互、注册与调用关系等等。  阅读备注 (数字) 表示调试过程进入。[数字]表示调试过程返回。数字表示这一次跳转的顺序。  osquery&#x2F;server.go表示osquery包下的server.go文件。  一个.go文件中type&#x2F;func&#x2F;interface的书写顺序对应代码中的布局">
+<meta property="og:type" content="article">
+<meta property="og:title" content="osquery拓展与主程序通信源码句读">
+<meta property="og:url" content="https://sysucjf111.github.io/2022/06/24/osquery%E6%8B%93%E5%B1%95%E4%B8%8E%E4%B8%BB%E7%A8%8B%E5%BA%8F%E9%80%9A%E4%BF%A1%E6%BA%90%E7%A0%81%E5%8F%A5%E8%AF%BB/index.html">
+<meta property="og:site_name" content="cjf">
+<meta property="og:description" content="目的 了解osquery的拓展的实现原理，包括拓展与osquery进程之间的通信协议、基础交互、注册与调用关系等等。  阅读备注 (数字) 表示调试过程进入。[数字]表示调试过程返回。数字表示这一次跳转的顺序。  osquery&#x2F;server.go表示osquery包下的server.go文件。  一个.go文件中type&#x2F;func&#x2F;interface的书写顺序对应代码中的布局">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2022-06-24T01:29:06.000Z">
+<meta property="article:modified_time" content="2022-06-24T01:29:59.766Z">
+<meta property="article:author" content="Junfeng Chen">
+<meta property="article:tag" content="osquery">
+<meta name="twitter:card" content="summary_large_image">
+  
+  
+  
+  <title>osquery拓展与主程序通信源码句读 - cjf</title>
+
+  <link  rel="stylesheet" href="https://lib.baomitu.com/twitter-bootstrap/4.6.1/css/bootstrap.min.css" />
+
+
+
+  <link  rel="stylesheet" href="https://lib.baomitu.com/github-markdown-css/4.0.0/github-markdown.min.css" />
+
+  <link  rel="stylesheet" href="https://lib.baomitu.com/hint.css/2.7.0/hint.min.css" />
+
+  <link  rel="stylesheet" href="https://lib.baomitu.com/fancybox/3.5.7/jquery.fancybox.min.css" />
+
+
+
+<!-- 主题依赖的图标库，不要自行修改 -->
+<!-- Do not modify the link that theme dependent icons -->
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1749284_hj8rtnfg7um.css">
+
+
+
+<link rel="stylesheet" href="//at.alicdn.com/t/font_1736178_lbnruvf0jn.css">
+
+
+<link  rel="stylesheet" href="/css/main.css" />
+
+
+  <link id="highlight-css" rel="stylesheet" href="/css/highlight.css" />
+  
+    <link id="highlight-css-dark" rel="stylesheet" href="/css/highlight-dark.css" />
+  
+
+
+
+
+  <script id="fluid-configs">
+    var Fluid = window.Fluid || {};
+    Fluid.ctx = Object.assign({}, Fluid.ctx)
+    var CONFIG = {"hostname":"sysucjf111.github.io","root":"/","version":"1.9.1","typing":{"enable":true,"typeSpeed":70,"cursorChar":"_","loop":false,"scope":[]},"anchorjs":{"enable":true,"element":"h1,h2,h3,h4,h5,h6","placement":"left","visible":"hover","icon":""},"progressbar":{"enable":true,"height_px":3,"color":"#29d","options":{"showSpinner":false,"trickleSpeed":100}},"code_language":{"enable":true,"default":"TEXT"},"copy_btn":true,"image_caption":{"enable":true},"image_zoom":{"enable":true,"img_url_replace":["",""]},"toc":{"enable":true,"placement":"right","headingSelector":"h1,h2,h3,h4,h5,h6","collapseDepth":0},"lazyload":{"enable":true,"loading_img":"/img/loading.gif","onlypost":false,"offset_factor":2},"web_analytics":{"enable":true,"follow_dnt":true,"baidu":null,"google":null,"gtag":null,"tencent":{"sid":null,"cid":null},"woyaola":null,"cnzz":null,"leancloud":{"app_id":"J71NdXtDoFLbAVpbRdtVUwok-MdYXbMMI","app_key":"hbbqXx4g73jEu1McGh1vfqy6","server_url":null,"path":"window.location.pathname","ignore_local":false}},"search_path":"/local-search.xml"};
+
+    if (CONFIG.web_analytics.follow_dnt) {
+      var dntVal = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+      Fluid.ctx.dnt = dntVal && (dntVal.startsWith('1') || dntVal.startsWith('yes') || dntVal.startsWith('on'));
+    }
+  </script>
+  <script  src="/js/utils.js" ></script>
+  <script  src="/js/color-schema.js" ></script>
+
+  
+<meta name="generator" content="Hexo 6.2.0"></head>
+
+
+<body>
+  
+
+  <header>
+    
+
+<div class="header-inner" style="height: 70vh;">
+  <nav id="navbar" class="navbar fixed-top  navbar-expand-lg navbar-dark scrolling-navbar">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <strong>cjf</strong>
+    </a>
+
+    <button id="navbar-toggler-btn" class="navbar-toggler" type="button" data-toggle="collapse"
+            data-target="#navbarSupportedContent"
+            aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+      <div class="animated-icon"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Collapsible content -->
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+      <ul class="navbar-nav ml-auto text-center">
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/">
+                <i class="iconfont icon-home-fill"></i>
+                首页
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/archives/">
+                <i class="iconfont icon-archive-fill"></i>
+                归档
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/categories/">
+                <i class="iconfont icon-category-fill"></i>
+                分类
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/tags/">
+                <i class="iconfont icon-tags-fill"></i>
+                标签
+              </a>
+            </li>
+          
+        
+          
+          
+          
+          
+            <li class="nav-item">
+              <a class="nav-link" href="/about/">
+                <i class="iconfont icon-user-fill"></i>
+                关于
+              </a>
+            </li>
+          
+        
+        
+          <li class="nav-item" id="search-btn">
+            <a class="nav-link" target="_self" href="javascript:;" data-toggle="modal" data-target="#modalSearch" aria-label="Search">
+              &nbsp;<i class="iconfont icon-search"></i>&nbsp;
+            </a>
+          </li>
+          
+        
+        
+          <li class="nav-item" id="color-toggle-btn">
+            <a class="nav-link" target="_self" href="javascript:;" aria-label="Color Toggle">&nbsp;<i
+                class="iconfont icon-dark" id="color-toggle-icon"></i>&nbsp;</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+  
+
+<div id="banner" class="banner" parallax=true
+     style="background: url('/img/default.png') no-repeat center center; background-size: cover;">
+  <div class="full-bg-img">
+    <div class="mask flex-center" style="background-color: rgba(0, 0, 0, 0.3)">
+      <div class="banner-text text-center fade-in-up">
+        <div class="h2">
+          
+            <span id="subtitle" data-typed-text="osquery拓展与主程序通信源码句读"></span>
+          
+        </div>
+
+        
+          
+  <div class="mt-3">
+    
+    
+      <span class="post-meta">
+        <i class="iconfont icon-date-fill" aria-hidden="true"></i>
+        <time datetime="2022-06-24 09:29" pubdate>
+          2022年6月24日 上午
+        </time>
+      </span>
+    
+  </div>
+
+  <div class="mt-1">
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-chart"></i>
+        
+          7.3k 字
+        
+      </span>
+    
+
+    
+      <span class="post-meta mr-2">
+        <i class="iconfont icon-clock-fill"></i>
+        
+        
+        
+          61 分钟
+        
+      </span>
+    
+
+    
+    
+      
+        <span id="leancloud-page-views-container" class="post-meta" style="display: none">
+          <i class="iconfont icon-eye" aria-hidden="true"></i>
+          <span id="leancloud-page-views"></span> 次
+        </span>
+        
+      
+    
+  </div>
+
+
+        
+      </div>
+
+      
+    </div>
+  </div>
+</div>
+
+</div>
+
+  </header>
+
+  <main>
+    
+      
+
+<div class="container-fluid nopadding-x">
+  <div class="row nomargin-x">
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+
+    </div>
+
+    <div class="col-lg-8 nopadding-x-md">
+      <div class="container nopadding-x-md" id="board-ctn">
+        <div id="board">
+          <article class="post-content mx-auto">
+            <!-- SEO header -->
+            <h1 style="display: none">osquery拓展与主程序通信源码句读</h1>
+            
+            <div class="markdown-body">
+              
+              <h1 id="目的"><a href="#目的" class="headerlink" title="目的"></a>目的</h1><ul>
+<li>了解osquery的拓展的实现原理，包括拓展与osquery进程之间的通信协议、基础交互、注册与调用关系等等。</li>
+</ul>
+<h1 id="阅读备注"><a href="#阅读备注" class="headerlink" title="阅读备注"></a>阅读备注</h1><ul>
+<li><p><code>(数字)</code> 表示调试过程进入。<code>[数字]</code>表示调试过程返回。数字表示这一次跳转的顺序。</p>
+</li>
+<li><p><code>osquery/server.go</code>表示osquery包下的server.go文件。</p>
+</li>
+<li><p>一个.go文件中type&#x2F;func&#x2F;interface的书写顺序对应代码中的布局位置。</p>
+</li>
+</ul>
+<h1 id="代码内容"><a href="#代码内容" class="headerlink" title="代码内容"></a>代码内容</h1><h2 id="拓展my-go-0"><a href="#拓展my-go-0" class="headerlink" title="拓展my.go(0)"></a>拓展my.go(0)</h2><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br></pre></td><td class="code"><pre><code class="hljs go"><span class="hljs-keyword">package</span> main<br><br><span class="hljs-keyword">import</span> (<br>	<span class="hljs-string">&quot;context&quot;</span><br>	<span class="hljs-string">&quot;github.com/osquery/osquery-go&quot;</span><br>	<span class="hljs-string">&quot;github.com/osquery/osquery-go/plugin/table&quot;</span><br>	<span class="hljs-string">&quot;log&quot;</span><br>	<span class="hljs-string">&quot;os&quot;</span><br>)<br><br><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">main</span><span class="hljs-params">()</span></span> &#123;<br>	<span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(os.Args) != <span class="hljs-number">2</span> &#123;<br>		log.Fatalf(<span class="hljs-string">`Usage: %s SOCKET_PATH`</span>, os.Args[<span class="hljs-number">0</span>])<br>	&#125;<br><br>	server, err := osquery.NewExtensionManagerServer(<span class="hljs-string">&quot;foobar&quot;</span>, os.Args[<span class="hljs-number">1</span>])<br>	<span class="hljs-keyword">if</span> err != <span class="hljs-literal">nil</span> &#123;<br>		log.Fatalf(<span class="hljs-string">&quot;Error creating extension: %s\n&quot;</span>, err)<br>	&#125;<br><br>	<span class="hljs-comment">// Create and register a new table plugin with the server.</span><br>	<span class="hljs-comment">// table.NewPlugin requires the table plugin name,</span><br>	<span class="hljs-comment">// a slice of Columns and a Generate function.</span><br>	server.RegisterPlugin(table.NewPlugin(<span class="hljs-string">&quot;foobar&quot;</span>, FoobarColumns(), FoobarGenerate))<br>	<span class="hljs-keyword">if</span> err := server.Run(); err != <span class="hljs-literal">nil</span> &#123;<br>		log.Fatalln(err)<br>	&#125;<br>&#125;<br><br><span class="hljs-comment">// FoobarColumns returns the columns that our table will return.</span><br><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">FoobarColumns</span><span class="hljs-params">()</span></span> []table.ColumnDefinition &#123;<br>	<span class="hljs-keyword">return</span> []table.ColumnDefinition&#123;<br>		table.TextColumn(<span class="hljs-string">&quot;foo&quot;</span>),<br>		table.TextColumn(<span class="hljs-string">&quot;baz&quot;</span>),<br>	&#125;<br>&#125;<br><br><span class="hljs-comment">// FoobarGenerate will be called whenever the table is queried. It should return</span><br><span class="hljs-comment">// a full table scan.</span><br><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">FoobarGenerate</span><span class="hljs-params">(ctx context.Context, queryContext table.QueryContext)</span></span> ([]<span class="hljs-keyword">map</span>[<span class="hljs-type">string</span>]<span class="hljs-type">string</span>, <span class="hljs-type">error</span>) &#123;<br>	<span class="hljs-keyword">return</span> []<span class="hljs-keyword">map</span>[<span class="hljs-type">string</span>]<span class="hljs-type">string</span>&#123;<br>		&#123;<br>			<span class="hljs-string">&quot;foo&quot;</span>: <span class="hljs-string">&quot;bar&quot;</span>,<br>			<span class="hljs-string">&quot;baz&quot;</span>: <span class="hljs-string">&quot;baz&quot;</span>,<br>		&#125;,<br>		&#123;<br>			<span class="hljs-string">&quot;foo&quot;</span>: <span class="hljs-string">&quot;bar&quot;</span>,<br>			<span class="hljs-string">&quot;baz&quot;</span>: <span class="hljs-string">&quot;baz&quot;</span>,<br>		&#125;,<br>	&#125;, <span class="hljs-literal">nil</span><br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h3 id="16"><a href="#16" class="headerlink" title="16"></a>16</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs go">server, err := osquery.NewExtensionManagerServer(<span class="hljs-string">&quot;foobar&quot;</span>, os.Args[<span class="hljs-number">1</span>])<br></code></pre></td></tr></table></figure>
+
+<p>NewExtensionManagerServer 创建一个extension management server，使用在路径上的socket(os.Args[1])与osquery沟通。</p>
+<h2 id="osquery-x2F-osquery-go"><a href="#osquery-x2F-osquery-go" class="headerlink" title="osquery&#x2F;osquery.go"></a>osquery&#x2F;osquery.go</h2><h3 id="type-Extension-interface"><a href="#type-Extension-interface" class="headerlink" title="type Extension interface"></a>type Extension interface</h3><h4 id="func-Ping"><a href="#func-Ping" class="headerlink" title="func Ping"></a>func Ping</h4><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs go">Ping(ctx context.Context) (_r *ExtensionStatus, _err <span class="hljs-type">error</span>)<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>参数ctx是context包的Context类型。context.Context 可以在不同 Goroutine 之间同步请求特定数据，例如可以用ctx.Done()返回的Channel作为不同协程之间的同步信号。</li>
+<li>返回值_r是一个ExtensionStatus指针</li>
+</ul>
+<h3 id="type-ExtensionStatus-struct"><a href="#type-ExtensionStatus-struct" class="headerlink" title="type ExtensionStatus struct"></a>type ExtensionStatus struct</h3><p>字段内容：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs go"><span class="hljs-keyword">type</span> ExtensionStatus <span class="hljs-keyword">struct</span> &#123;<br>	Code    <span class="hljs-type">int32</span>              <span class="hljs-string">`thrift:&quot;code,1&quot; db:&quot;code&quot; json:&quot;code&quot;`</span><br>	Message <span class="hljs-type">string</span>             <span class="hljs-string">`thrift:&quot;message,2&quot; db:&quot;message&quot; json:&quot;message&quot;`</span><br>	UUID    ExtensionRouteUUID <span class="hljs-string">`thrift:&quot;uuid,3&quot; db:&quot;uuid&quot; json:&quot;uuid&quot;`</span><br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>ExtensionStatus是一个结构体，可以按照json、sql、Thrift方式编解码，并制定了对应的字段名。</p>
+<h2 id="osquery-x2F-server-go"><a href="#osquery-x2F-server-go" class="headerlink" title="osquery&#x2F;server.go"></a>osquery&#x2F;server.go</h2><h3 id="type-ExtensionManagerServer-struct"><a href="#type-ExtensionManagerServer-struct" class="headerlink" title="type ExtensionManagerServer struct"></a>type ExtensionManagerServer struct</h3><p>ExtensionManagerServer是ExtensionManager API（接口）的完整实现。一个Plugin可以使用extension manager进行注册，并且由extension manager处理与osquery进程的通信。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs go"><span class="hljs-keyword">type</span> ExtensionManagerServer <span class="hljs-keyword">struct</span> &#123;<br>	name         <span class="hljs-type">string</span><br>	version      <span class="hljs-type">string</span><br>	sockPath     <span class="hljs-type">string</span><br>	serverClient ExtensionManager<br>	registry     <span class="hljs-keyword">map</span>[<span class="hljs-type">string</span>](<span class="hljs-keyword">map</span>[<span class="hljs-type">string</span>]OsqueryPlugin)<br>	server       thrift.TServer<br>	transport    thrift.TServerTransport<br>	timeout      time.Duration<br>	pingInterval time.Duration <span class="hljs-comment">// How often to ping osquery server</span><br>	mutex        sync.Mutex<br>	uuid         osquery.ExtensionRouteUUID<br>	started      <span class="hljs-type">bool</span> <span class="hljs-comment">// Used to ensure tests wait until the server is actually started</span><br>&#125;<br></code></pre></td></tr></table></figure>
+
+<h4 id="关键字段"><a href="#关键字段" class="headerlink" title="关键字段"></a>关键字段</h4><ul>
+<li>sockPath，socket路径名。</li>
+<li>serverClient，这个字段封装了socket连接(管道)以及同于与osquery进程沟通的Client。</li>
+<li>server和transport待看。设想是osquery进程作为Thrift的server、pipe封装在tranport中。</li>
+</ul>
+<h3 id="type-ServerOption-func"><a href="#type-ServerOption-func" class="headerlink" title="type ServerOption func"></a>type ServerOption func</h3><figure class="highlight elm"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs elm"><span class="hljs-keyword">type</span> <span class="hljs-type">ServerOption</span> func(*<span class="hljs-type">ExtensionManagerServer</span>)<br></code></pre></td></tr></table></figure>
+
+<p>任何以ExtensionManagerServer指针为参数的函数都是ServerOption类型。</p>
+<h3 id="func-NewExtensionMangerServer-1"><a href="#func-NewExtensionMangerServer-1" class="headerlink" title="func NewExtensionMangerServer(1)"></a>func NewExtensionMangerServer(1)</h3><h4 id="声明"><a href="#声明" class="headerlink" title="声明"></a>声明</h4><figure class="highlight reasonml"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs reasonml">func <span class="hljs-constructor">NewExtensionManagerServer(<span class="hljs-params">name</span> <span class="hljs-params">string</span>, <span class="hljs-params">sockPath</span> <span class="hljs-params">string</span>, <span class="hljs-params">opts</span> <span class="hljs-operator">...</span>ServerOption)</span> (*ExtensionManagerServer, error) <br></code></pre></td></tr></table></figure>
+
+<p>name就是my.go传进来的表名称，sockPath就是my.go传进来的socket路径。</p>
+<p>这个socket路径对应着osqueryi的CLI flag：extensions_socket。在这里为<code>\\.\pipe\shell.em</code>。</p>
+<h4 id="内容"><a href="#内容" class="headerlink" title="内容"></a>内容</h4><h5 id="92-95"><a href="#92-95" class="headerlink" title="92-95"></a>92-95</h5><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs go">registry := <span class="hljs-built_in">make</span>(<span class="hljs-keyword">map</span>[<span class="hljs-type">string</span>](<span class="hljs-keyword">map</span>[<span class="hljs-type">string</span>]OsqueryPlugin));<br><span class="hljs-keyword">for</span> reg, _ := <span class="hljs-keyword">range</span> validRegistryNames &#123;<br>		registry[reg] = <span class="hljs-built_in">make</span>(<span class="hljs-keyword">map</span>[<span class="hljs-type">string</span>]OsqueryPlugin)<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>validRegistryNames是一个map变量，包含table,logger,config,distributed四个键。这个四个键赋值为registry的键，然后每个键的值是一个值类型为OsqueryPlugin接口的map,map内容没有实现。</p>
+<h5 id="97-103"><a href="#97-103" class="headerlink" title="97-103"></a>97-103</h5><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs go">manager := &amp;ExtensionManagerServer&#123;<br>    name:         name,<br>    sockPath:     sockPath,<br>    registry:     registry,<br>    timeout:      defaultTimeout,<br>    pingInterval: defaultPingInterval,<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>上面对manage中的一些字段进行了赋值：</p>
+<ul>
+<li>name指定表名</li>
+<li>sockPath指定socket连接名</li>
+<li>regitry给出osquery的插件注册信息。</li>
+</ul>
+<h5 id="105-107"><a href="#105-107" class="headerlink" title="105-107"></a>105-107</h5><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><code class="hljs go"><span class="hljs-keyword">for</span> _, opt := <span class="hljs-keyword">range</span> opts &#123;<br>    opt(manager)<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>opt是ServerOption类型函数，对ExtensionManagerServer类型的manager进行一些处理。这里没有进入for循环。</p>
+<h5 id="109"><a href="#109" class="headerlink" title="109"></a>109</h5><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs go">serverClient, err := NewClient(sockPath, manager.timeout)<br></code></pre></td></tr></table></figure>
+
+<p>进入NewClient函数。</p>
+<h2 id="osquery-x2F-client-go"><a href="#osquery-x2F-client-go" class="headerlink" title="osquery&#x2F;client.go"></a>osquery&#x2F;client.go</h2><h3 id="func-NewClient-2"><a href="#func-NewClient-2" class="headerlink" title="func NewClient(2)"></a>func NewClient(2)</h3><p>NewClient创建一个extension的client端，client通过socket与osquery通信。</p>
+<h4 id="声明-1"><a href="#声明-1" class="headerlink" title="声明"></a>声明</h4><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs go"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">NewClient</span><span class="hljs-params">(path <span class="hljs-type">string</span>, timeout time.Duration)</span></span> (*ExtensionManagerClient, <span class="hljs-type">error</span>)<br></code></pre></td></tr></table></figure>
+
+<ul>
+<li>path是socket路径</li>
+</ul>
+<h4 id="内容-1"><a href="#内容-1" class="headerlink" title="内容"></a>内容</h4><h5 id="36"><a href="#36" class="headerlink" title="36"></a>36</h5><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs go">trans, err := transport.Open(path, timeout)<br></code></pre></td></tr></table></figure>
+
+<p>进入Open函数。</p>
+<h2 id="transport-x2F-transport-windows-go"><a href="#transport-x2F-transport-windows-go" class="headerlink" title="transport&#x2F;transport_windows.go"></a>transport&#x2F;transport_windows.go</h2><h3 id="func-Open-3"><a href="#func-Open-3" class="headerlink" title="func Open(3)"></a>func Open(3)</h3><p>Open 打开一个named pipe，返回一个Thrift包中定义的TSocket。TScoket实现了接口TTransport；TTransport封装了I&#x2F;O层</p>
+<h4 id="声明-2"><a href="#声明-2" class="headerlink" title="声明"></a>声明</h4><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs go"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">Open</span><span class="hljs-params">(path <span class="hljs-type">string</span>, timeout time.Duration)</span></span> (*thrift.TSocket, <span class="hljs-type">error</span>)<br></code></pre></td></tr></table></figure>
+
+<h4 id="内容-2"><a href="#内容-2" class="headerlink" title="内容"></a>内容</h4><h5 id="19"><a href="#19" class="headerlink" title="19"></a>19</h5><figure class="highlight 1c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs 1c">conn, err := winio.DialPipe(path, <span class="hljs-meta">&amp;timeout)</span><br></code></pre></td></tr></table></figure>
+
+<p>使用winio.Dialpipe，根据socket路径以及timeout建立连接。</p>
+<h2 id="thrift-x2F-socket-go"><a href="#thrift-x2F-socket-go" class="headerlink" title="thrift&#x2F;socket.go"></a>thrift&#x2F;socket.go</h2><h3 id="type-TSocket-struct"><a href="#type-TSocket-struct" class="headerlink" title="type TSocket struct"></a>type TSocket struct</h3><figure class="highlight elm"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><code class="hljs elm"><span class="hljs-keyword">type</span> <span class="hljs-type">TSocket</span> struct &#123;<br>	conn *socketConn<br>	addr net.<span class="hljs-type">Addr</span><br>	cfg  *<span class="hljs-type">TConfiguration</span><br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>这个结构体实现了TTransport接口。TTransport接口封装了I&#x2F;O layer的信息。在这个实现中使用的是*socketConn的conn具体实现socket连接。</p>
+<h2 id="thrift-x2F-socket-conn-go"><a href="#thrift-x2F-socket-conn-go" class="headerlink" title="thrift&#x2F;socket_conn.go"></a>thrift&#x2F;socket_conn.go</h2><h3 id="type-socketConn-struct"><a href="#type-socketConn-struct" class="headerlink" title="type socketConn struct"></a>type socketConn struct</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs go"><span class="hljs-keyword">type</span> socketConn <span class="hljs-keyword">struct</span> &#123;<br>	net.Conn<br><br>	buffer [<span class="hljs-number">1</span>]<span class="hljs-type">byte</span><br>	closed <span class="hljs-type">int32</span><br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>socketConn是封装的net.Conn，能进行connectivity check。</p>
+<p>net.Conn是net包下的一个用于表示网络连接的接口。除了类似IO的Read,Write,Close方法之外，还可以设置Deadline。Deadline是一个绝对的时间，超过Deadline的所有IO操作会直接fail而不会阻塞。</p>
+<h2 id="winio-x2F-pipe-go"><a href="#winio-x2F-pipe-go" class="headerlink" title="winio&#x2F;pipe.go"></a>winio&#x2F;pipe.go</h2><h3 id="func-DialPipe-4"><a href="#func-DialPipe-4" class="headerlink" title="func DialPipe(4)"></a>func DialPipe(4)</h3><h4 id="声明-3"><a href="#声明-3" class="headerlink" title="声明"></a>声明</h4><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs go"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">DialPipe</span><span class="hljs-params">(path <span class="hljs-type">string</span>, timeout *time.Duration)</span></span> (net.Conn, <span class="hljs-type">error</span>) &#123;<br></code></pre></td></tr></table></figure>
+
+<p>DialPipe根据路径连接到named pipe(命名管道)，如果connection超过特定duration就会timeout。</p>
+<p>命名管道是windows的win32io工具之一。</p>
+<blockquote>
+<p>pipe是进程之间用于通信的共享内存。创建pipe的进程叫pipe server，连接到pipe的进程叫pipe client。</p>
+<p>pipe有两种类型，一种是anonymous pipe(匿名管道)，一种是named pipe(命名管道)。pipe可以是单向也可以是双向。</p>
+<p>匿名管道是一个未命名的单向管道，通常在父进程和子进程之间传输数据。</p>
+<p>named pipe(是一个命名的单向或双工管道，能够在一个pipe server和一到多个pipe client之间通信。</p>
+<p>一个named pipe的所有实例的name相同，但是每个实例都有自己的buffer和handle，client&#x2F;server之间也提供独立的通信渠道。实例的机制允许多个client能够同步使用一个pipe。</p>
+<p>server端创建一个named pipe的函数时CreateNamePipe，连接一个named Pipe的函数是ConnectNamedPipe。Client端使用CreateFile或者CallNamedPipe连接到一个named pipe。</p>
+<p>DialPipe中使用的是createFile函数。</p>
+</blockquote>
+<h5 id="144-149"><a href="#144-149" class="headerlink" title="144-149"></a>144-149</h5><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><code class="hljs go"><span class="hljs-keyword">var</span> absTimeout time.Time<br><span class="hljs-keyword">if</span> timeout != <span class="hljs-literal">nil</span> &#123;<br>    absTimeout = time.Now().Add(*timeout)<br>&#125; <span class="hljs-keyword">else</span> &#123;<br>    absTimeout = time.Now().Add(time.Second * <span class="hljs-number">2</span>)<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>当前时间+timeout得到absTimeout。</p>
+<h5 id="150-164"><a href="#150-164" class="headerlink" title="150-164"></a>150-164</h5><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs go"><span class="hljs-keyword">var</span> err <span class="hljs-type">error</span><br><span class="hljs-keyword">var</span> h syscall.Handle<br><span class="hljs-keyword">for</span> &#123;<br>    h, err = createFile(path, syscall.GENERIC_READ|syscall.GENERIC_WRITE, <span class="hljs-number">0</span>, <span class="hljs-literal">nil</span>, syscall.OPEN_EXISTING, syscall.FILE_FLAG_OVERLAPPED|cSECURITY_SQOS_PRESENT|cSECURITY_ANONYMOUS, <span class="hljs-number">0</span>)<br>    <span class="hljs-keyword">if</span> err != cERROR_PIPE_BUSY &#123;<br>        <span class="hljs-keyword">break</span><br>    &#125;<br>    <span class="hljs-keyword">if</span> time.Now().After(absTimeout) &#123;<br>        <span class="hljs-keyword">return</span> <span class="hljs-literal">nil</span>, ErrTimeout<br>    &#125;<br><br>    <span class="hljs-comment">// Wait 10 msec and try again. This is a rather simplistic</span><br>    <span class="hljs-comment">// view, as we always try each 10 milliseconds.</span><br>    time.Sleep(time.Millisecond * <span class="hljs-number">10</span>)<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<p>以上代码就是连接到一个named pipe的实例的过程。</p>
+<p>先创建一个err还有一个表示named pipe的handle的变量h。使用createFile来连接到一个named pipe。</p>
+<p>传入createFile中的几个参数的解释，参考<a target="_blank" rel="noopener" href="https://docs.microsoft.com/zh-cn/windows/win32/api/fileapi/nf-fileapi-createfilew%EF%BC%9A">https://docs.microsoft.com/zh-cn/windows/win32/api/fileapi/nf-fileapi-createfilew：</a></p>
+<ul>
+<li>path, socket连接的路径</li>
+<li>syscall.GENERIC_READ|syscall.GENERIC_WRITE, 表示的是这个IO device的access(权限)为可读可写</li>
+<li>0,表示这个io必须单独被使用，不能多个进程一并使用</li>
+<li>nil, 这个值取nil说明返回的handle不能被这个divice的子进程继承</li>
+<li>syscall.OPEN_EXISTING, 意思就是只有在io device存在的时候才打开它</li>
+<li>syscall.FILE_FLAG_OVERLAPPED|cSECURITY_SQOS_PRESENT|cSECURITY_ANONYMOUS, device相关attribute参数</li>
+<li>0，不提供模板文件。模板文件指提供attribute参数的文件。</li>
+</ul>
+<h2 id="winio-x2F-zsyscall-windows-go"><a href="#winio-x2F-zsyscall-windows-go" class="headerlink" title="winio&#x2F;zsyscall_windows.go"></a>winio&#x2F;zsyscall_windows.go</h2><h3 id="function-createFile-5"><a href="#function-createFile-5" class="headerlink" title="function createFile(5)"></a>function createFile(5)</h3><h4 id="声明-4"><a href="#声明-4" class="headerlink" title="声明"></a>声明</h4><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs go"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">createFile</span><span class="hljs-params">(name <span class="hljs-type">string</span>, access <span class="hljs-type">uint32</span>, mode <span class="hljs-type">uint32</span>, sa *syscall.SecurityAttributes, createmode <span class="hljs-type">uint32</span>, attrs <span class="hljs-type">uint32</span>, templatefile syscall.Handle)</span></span> (handle syscall.Handle, err <span class="hljs-type">error</span>)<br></code></pre></td></tr></table></figure>
+
+<h4 id="内容-3"><a href="#内容-3" class="headerlink" title="内容"></a>内容</h4>
+              
+            </div>
+            <hr/>
+            <div>
+              <div class="post-metas my-3">
+  
+    <div class="post-meta mr-3 d-flex align-items-center">
+      <i class="iconfont icon-category"></i>
+      
+
+<span class="category-chains">
+  
+  
+    
+      <span class="category-chain">
+        
+  <a href="/categories/%E6%8A%80%E6%9C%AF/" class="category-chain-item">技术</a>
+  
+  
+
+      </span>
+    
+  
+</span>
+
+    </div>
+  
+  
+    <div class="post-meta">
+      <i class="iconfont icon-tags"></i>
+      
+        <a href="/tags/osquery/">#osquery</a>
+      
+    </div>
+  
+</div>
+
+
+              
+  
+
+  <div class="license-box my-3">
+    <div class="license-title">
+      <div>osquery拓展与主程序通信源码句读</div>
+      <div>https://sysucjf111.github.io/2022/06/24/osquery拓展与主程序通信源码句读/</div>
+    </div>
+    <div class="license-meta">
+      
+        <div class="license-meta-item">
+          <div>作者</div>
+          <div>Junfeng Chen</div>
+        </div>
+      
+      
+        <div class="license-meta-item license-meta-date">
+          <div>发布于</div>
+          <div>2022年6月24日</div>
+        </div>
+      
+      
+      <div class="license-meta-item">
+        <div>许可协议</div>
+        <div>
+          
+            
+            
+              <a target="_blank" href="https://creativecommons.org/licenses/by/4.0/">
+              <span class="hint--top hint--rounded" aria-label="BY - 署名">
+                <i class="iconfont icon-by"></i>
+              </span>
+              </a>
+            
+          
+        </div>
+      </div>
+    </div>
+    <div class="license-icon iconfont"></div>
+  </div>
+
+
+
+              
+                <div class="post-prevnext my-3">
+                  <article class="post-prev col-6">
+                    
+                    
+                  </article>
+                  <article class="post-next col-6">
+                    
+                    
+                      <a href="/2022/06/23/%E7%BC%96%E8%AF%91%E4%B8%80%E4%B8%AAosquery-go%E6%89%A9%E5%B1%95%E7%9A%84%E6%B5%81%E7%A8%8B/" title="编译一个osquery-go扩展的流程">
+                        <span class="hidden-mobile">编译一个osquery-go扩展的流程</span>
+                        <span class="visible-mobile">下一篇</span>
+                        <i class="iconfont icon-arrowright"></i>
+                      </a>
+                    
+                  </article>
+                </div>
+              
+            </div>
+
+            
+  <article id="comments" lazyload>
+    
+  <div id="valine"></div>
+  <script type="text/javascript">
+    Fluid.utils.loadComments('#valine', function() {
+      Fluid.utils.createScript('https://lib.baomitu.com/valine/1.4.18/Valine.min.js', function() {
+        var options = Object.assign(
+          {"appId":"J71NdXtDoFLbAVpbRdtVUwok-MdYXbMMI","appKey":"hbbqXx4g73jEu1McGh1vfqy6","path":"window.location.pathname","placeholder":null,"avatar":"retro","meta":["nick","mail","link"],"requiredFields":[],"pageSize":10,"lang":"zh-CN","highlight":false,"recordIP":false,"serverURLs":"","emojiCDN":null,"emojiMaps":null,"enableQQ":false},
+          {
+            el: "#valine",
+            path: window.location.pathname
+          }
+        )
+        new Valine(options);
+        Fluid.utils.waitElementVisible('#valine .vcontent', () => {
+          var imgSelector = '#valine .vcontent img:not(.vemoji)';
+          Fluid.plugins.imageCaption(imgSelector);
+          Fluid.plugins.fancyBox(imgSelector);
+        })
+      });
+    });
+  </script>
+  <noscript>Please enable JavaScript to view the comments</noscript>
+
+
+  </article>
+
+
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col d-none d-lg-block col-lg-2">
+      
+  <aside class="sidebar" style="margin-left: -1rem">
+    <div id="toc">
+  <p class="toc-header"><i class="iconfont icon-list"></i>&nbsp;目录</p>
+  <div class="toc-body" id="toc-body"></div>
+</div>
+
+
+
+  </aside>
+
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+    
+
+    
+      <a id="scroll-top-button" aria-label="TOP" href="#" role="button">
+        <i class="iconfont icon-arrowup" aria-hidden="true"></i>
+      </a>
+    
+
+    
+      <div class="modal fade" id="modalSearch" tabindex="-1" role="dialog" aria-labelledby="ModalLabel"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header text-center">
+        <h4 class="modal-title w-100 font-weight-bold">搜索</h4>
+        <button type="button" id="local-search-close" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body mx-3">
+        <div class="md-form mb-5">
+          <input type="text" id="local-search-input" class="form-control validate">
+          <label data-error="x" data-success="v" for="local-search-input">关键词</label>
+        </div>
+        <div class="list-group" id="local-search-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+
+    
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+  
+    <div class="footer-content">
+       <a href="https://hexo.io" target="_blank" rel="nofollow noopener"><span>Hexo</span></a> <i class="iconfont icon-love"></i> <a href="https://github.com/fluid-dev/hexo-theme-fluid" target="_blank" rel="nofollow noopener"><span>Fluid</span></a> 
+    </div>
+  
+  
+    <div class="statistics">
+  
+  
+
+  
+    
+      <span id="leancloud-site-pv-container" style="display: none">
+        总访问量 
+        <span id="leancloud-site-pv"></span>
+         次
+      </span>
+    
+    
+      <span id="leancloud-site-uv-container" style="display: none">
+        总访客数 
+        <span id="leancloud-site-uv"></span>
+         人
+      </span>
+    
+    
+
+  
+</div>
+
+  
+  
+  
+</div>
+
+  </footer>
+
+  <!-- Scripts -->
+  
+  <script  src="https://lib.baomitu.com/nprogress/0.2.0/nprogress.min.js" ></script>
+  <link  rel="stylesheet" href="https://lib.baomitu.com/nprogress/0.2.0/nprogress.min.css" />
+
+  <script>
+    NProgress.configure({"showSpinner":false,"trickleSpeed":100})
+    NProgress.start()
+    window.addEventListener('load', function() {
+      NProgress.done();
+    })
+  </script>
+
+
+<script  src="https://lib.baomitu.com/jquery/3.6.0/jquery.min.js" ></script>
+<script  src="https://lib.baomitu.com/twitter-bootstrap/4.6.1/js/bootstrap.min.js" ></script>
+<script  src="/js/events.js" ></script>
+<script  src="/js/plugins.js" ></script>
+
+
+  <script  src="https://lib.baomitu.com/typed.js/2.0.12/typed.min.js" ></script>
+  <script>
+    (function (window, document) {
+      var typing = Fluid.plugins.typing;
+      var subtitle = document.getElementById('subtitle');
+      if (!subtitle || !typing) {
+        return;
+      }
+      var text = subtitle.getAttribute('data-typed-text');
+      
+        typing(text);
+      
+    })(window, document);
+  </script>
+
+
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+    
+  
+
+
+
+
+  
+    <script  src="/js/img-lazyload.js" ></script>
+  
+
+
+
+
+  
+<script>
+  Fluid.utils.createScript('https://lib.baomitu.com/tocbot/4.18.2/tocbot.min.js', function() {
+    var toc = jQuery('#toc');
+    if (toc.length === 0 || !window.tocbot) { return; }
+    var boardCtn = jQuery('#board-ctn');
+    var boardTop = boardCtn.offset().top;
+
+    window.tocbot.init({
+      tocSelector     : '#toc-body',
+      contentSelector : '.markdown-body',
+      headingSelector : CONFIG.toc.headingSelector || 'h1,h2,h3,h4,h5,h6',
+      linkClass       : 'tocbot-link',
+      activeLinkClass : 'tocbot-active-link',
+      listClass       : 'tocbot-list',
+      isCollapsedClass: 'tocbot-is-collapsed',
+      collapsibleClass: 'tocbot-is-collapsible',
+      collapseDepth   : CONFIG.toc.collapseDepth || 0,
+      scrollSmooth    : true,
+      headingsOffset  : -boardTop
+    });
+    if (toc.find('.toc-list-item').length > 0) {
+      toc.css('visibility', 'visible');
+    }
+  });
+</script>
+
+
+  <script>
+  (function() {
+    var enableLang = CONFIG.code_language.enable && CONFIG.code_language.default;
+    var enableCopy = CONFIG.copy_btn;
+    if (!enableLang && !enableCopy) {
+      return;
+    }
+
+    function getBgClass(ele) {
+      return Fluid.utils.getBackgroundLightness(ele) >= 0 ? 'code-widget-light' : 'code-widget-dark';
+    }
+
+    var copyTmpl = '';
+    copyTmpl += '<div class="code-widget">';
+    copyTmpl += 'LANG';
+    copyTmpl += '</div>';
+    jQuery('.markdown-body pre').each(function() {
+      var $pre = jQuery(this);
+      if ($pre.find('code.mermaid').length > 0) {
+        return;
+      }
+      if ($pre.find('span.line').length > 0) {
+        return;
+      }
+
+      var lang = '';
+
+      if (enableLang) {
+        lang = CONFIG.code_language.default;
+        if ($pre[0].children.length > 0 && $pre[0].children[0].classList.length >= 2 && $pre.children().hasClass('hljs')) {
+          lang = $pre[0].children[0].classList[1];
+        } else if ($pre[0].getAttribute('data-language')) {
+          lang = $pre[0].getAttribute('data-language');
+        } else if ($pre.parent().hasClass('sourceCode') && $pre[0].children.length > 0 && $pre[0].children[0].classList.length >= 2) {
+          lang = $pre[0].children[0].classList[1];
+          $pre.parent().addClass('code-wrapper');
+        } else if ($pre.parent().hasClass('markdown-body') && $pre[0].classList.length === 0) {
+          $pre.wrap('<div class="code-wrapper"></div>');
+        }
+        lang = lang.toUpperCase().replace('NONE', CONFIG.code_language.default);
+      }
+      $pre.append(copyTmpl.replace('LANG', lang).replace('code-widget">',
+        getBgClass($pre[0]) + (enableCopy ? ' code-widget copy-btn" data-clipboard-snippet><i class="iconfont icon-copy"></i>' : ' code-widget">')));
+
+      if (enableCopy) {
+        Fluid.utils.createScript('https://lib.baomitu.com/clipboard.js/2.0.10/clipboard.min.js', function() {
+          var clipboard = new window.ClipboardJS('.copy-btn', {
+            target: function(trigger) {
+              var nodes = trigger.parentNode.childNodes;
+              for (var i = 0; i < nodes.length; i++) {
+                if (nodes[i].tagName === 'CODE') {
+                  return nodes[i];
+                }
+              }
+            }
+          });
+          clipboard.on('success', function(e) {
+            e.clearSelection();
+            e.trigger.innerHTML = e.trigger.innerHTML.replace('icon-copy', 'icon-success');
+            setTimeout(function() {
+              e.trigger.innerHTML = e.trigger.innerHTML.replace('icon-success', 'icon-copy');
+            }, 2000);
+          });
+        });
+      }
+    });
+  })();
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://lib.baomitu.com/anchor-js/4.3.1/anchor.min.js', function() {
+    window.anchors.options = {
+      placement: CONFIG.anchorjs.placement,
+      visible  : CONFIG.anchorjs.visible
+    };
+    if (CONFIG.anchorjs.icon) {
+      window.anchors.options.icon = CONFIG.anchorjs.icon;
+    }
+    var el = (CONFIG.anchorjs.element || 'h1,h2,h3,h4,h5,h6').split(',');
+    var res = [];
+    for (var item of el) {
+      res.push('.markdown-body > ' + item.trim());
+    }
+    if (CONFIG.anchorjs.placement === 'left') {
+      window.anchors.options.class = 'anchorjs-link-left';
+    }
+    window.anchors.add(res.join(', '));
+  });
+</script>
+
+
+  
+<script>
+  Fluid.utils.createScript('https://lib.baomitu.com/fancybox/3.5.7/jquery.fancybox.min.js', function() {
+    Fluid.plugins.fancyBox();
+  });
+</script>
+
+
+  <script>Fluid.plugins.imageCaption();</script>
+
+  <script  src="/js/local-search.js" ></script>
+
+  <script defer src="/js/leancloud.js" ></script>
+
+
+
+
+
+<!-- 主题的启动项，将它保持在最底部 -->
+<!-- the boot of the theme, keep it at the bottom -->
+<script  src="/js/boot.js" ></script>
+
+
+  
+
+  <noscript>
+    <div class="noscript-warning">博客在允许 JavaScript 运行的环境下浏览效果更佳</div>
+  </noscript>
+</body>
+</html>
